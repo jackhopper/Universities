@@ -1,0 +1,408 @@
+---
+title: "University Clustering"
+author: "Jack Hopper"
+date: "6/8/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Introduction - Why Do This Analysis?
+
+Unsupervised Machine Learning helps us make sense of patterns in data. In particular, clustering analysis helps us find interesting ways to group items based on how similar they are. One useful application of clustering is in higher education. There are so many universities in the U.S., and so many ways to measure how 'good' a school is, that it's easy to get lost in the weeds of the data. For example, consider two schools in my home state of Ohio. Should we think of the College of Wooster as a comparable school to Xavier University? Both are private colleges that enroll less than 6,000 students, accept over half of their applicants, and charge relatively high (>$40,000) tuition. When we're classifying universities, should they be in the same group?
+
+For this analysis, I'll attempt to classify schools based on their selectivity. 'Selectivity' is an admittedly vague metric, but there are a handful of meaningful statistics that represent selectivity based on university prestige and academic rigor. These are metrics such as tuition rates, admission rates, ACT scores for incoming students, and total enrollment. With clustering, there is no single 'correct' answer, and as an unsupervised Machine Learning technique we aren't trying to come up with a single group of 'best' schools; rather, this is a way to present a useful framework for revealing patterns in school selectivity data, allowing us to compare schools on the same playing field.
+
+### Data Gathering & Exploration
+
+For this analysis, we will make use of the IPEDS (Integrated Postsecondary Education Data System) database, a government source for higher education data. The latest data covers the 2019-2020 school year.
+
+IPEDS publishes a Microsoft Access database every year with hundreds of variables covering thousands of higher education institutions, so we will connect to that to grab the data. The advantage of this setup is that we quickly can access data from every IPEDS table at once instead of grabbing each file individually.
+
+This Access database contains dozens of tables, so a good first step is to explore the data from IPEDS' site directly, downloading the accompanying README files, and examining the type of data available in each table. Let's get to it!
+
+#### Load packages and connect to the Access database
+
+For this analysis, we need the tidyverse as well as the RODBC package, which allows connections to Access databases.
+
+```{r, echo = FALSE, message = FALSE, warning=FALSE}
+library(tidyverse)
+library(lubridate)
+library(RODBC)
+```
+
+```{r}
+# Connect to Access db
+channel19 <- odbcConnectAccess2007("C:\\Users\\jackh\\OneDrive\\Documents\\R Analytics\\Universities\\IPEDS202122.accdb")
+```
+
+##### Build the data frame
+
+We will require data on multiple categories. Note that IPEDS stores each variable with a mnemonic - so note that I have taken steps to translate each mnemonic into a pithy but more informative variable name. For instance, in the first table I renamed the IPEDS 'ACTCM75' variable as 'act_score.' The following code condenses all the data pulls into a series of tables for clarity.
+
+```{r}
+#Institutional characteristics
+institution <- sqlFetch(channel19, "HD2019")
+institution <- institution %>% 
+  select(UNITID, INSTNM, ICLEVEL, CONTROL,  LATITUDE, LONGITUD, ADDR, CITY, STABBR, ZIP, CBSA) %>% 
+  rename(school = INSTNM)
+
+#Admissions
+adm <- sqlFetch(channel19, "ADM2019")
+adm <- adm %>% 
+  select(UNITID, ACTCM75) %>% 
+  rename(act_score = ACTCM75
+         )
+#DRAdmissions table
+adm_yield <- sqlFetch(channel19, "DRVADM2019")
+adm_yield <- adm_yield %>% 
+  select(UNITID, DVADM01) %>% 
+  rename(pct_admitted = DVADM01)
+
+#Enrollment characteristics
+enrollment <- sqlFetch(channel19, "DRVEF2019")
+enrollment <- enrollment %>% 
+  select(UNITID, EFUG, EFUGFT, EFUGPT, PCUDEEXC, RMINSTTP, RMOUSTTP, RMFRGNCP) %>% 
+  rename(ug_enroll = EFUG,
+         ft_enroll = EFUGFT,
+         pt_enroll = EFUGPT,
+         pct_online = PCUDEEXC,
+         pct_instate = RMINSTTP,
+         pct_outstate = RMOUSTTP,
+         pct_foreign = RMFRGNCP)
+enrollment_d <- sqlFetch(channel19, "EF2019D")
+enrollment_d <- enrollment_d %>%
+  select(UNITID, RET_PCF) %>% 
+  rename(retention_rate = RET_PCF)
+enrollment <- left_join(enrollment, enrollment_d, by = c("UNITID" = "UNITID"))
+
+#Tuition
+tuition <- sqlFetch(channel19, "IC2019_AY")
+tuition <- tuition %>% 
+  select(UNITID, TUITION2, TUITION3) %>% 
+  rename(in_state_tuition = TUITION2,
+         out_state_tuition = TUITION3)
+```
+
+Now we can join all this data together into a master data frame and filter the resulting data to only include 4-year, non-profit schools (ie, exclude 2 year/technical colleges and for-profit institutions, as those are outside the scope of this analysis).
+```{r}
+###Join it all together###
+school_data <- institution %>% 
+  left_join(y = adm, by = c("UNITID" = "UNITID")) %>% 
+  left_join(y = adm_yield, by = c("UNITID" = "UNITID")) %>% 
+  left_join(y = enrollment, by = c("UNITID" = "UNITID")) %>% 
+  left_join(y = tuition, by = c("UNITID" = "UNITID")) 
+#And limit the analysis to 4 year private & public non-profit institutions
+school_data <- school_data %>% 
+  filter(ICLEVEL == 1,
+         CONTROL != 3) %>% 
+  select(-ICLEVEL)
+
+#Let's create a key linking each school ID to a school, for later
+school_id_key <- school_data %>% 
+  select(UNITID, school)
+
+```
+
+#### Data Cleaning
+
+We now have a primary data frame. Let's take a look at it.
+```{r}
+school_data <- school_data %>% 
+  mutate(UNITID = as.character(UNITID))
+
+glimpse(school_data)
+summary(school_data)
+```
+
+Though we have data for in and out of state tuition separately, we need to calculate an 'average' tuition rate for all students. Note that the percent of students paying in/out of state don't add to 100 (in the data, schools can enter some students' in-state status as 'unknown') so we will have to re-scale that data to calculate the average.
+
+```{r}
+school_data <- school_data %>% 
+  mutate(in_state_share = pct_instate/ (pct_instate + pct_outstate),
+         out_state_share = 1-in_state_share,
+         avg_tuition = (in_state_share * in_state_tuition) + (out_state_share * out_state_tuition)
+         ) %>% 
+  select(-in_state_share, -out_state_share)
+
+summary(school_data$avg_tuition)
+```
+
+
+One thing I noticed about the data in the first exploration is that the ACT score and percent admitted fields seem to have the most NAs. I wonder if these NAs are correlated. I'll make use of the plot_histogram() feature from the DataExplorer package to give a better sense of the NA data here.
+```{r}
+library(DataExplorer)
+
+#Could view a table of missing data here...
+#school_data %>% 
+#  filter(is.na(act_score)) %>% 
+#  summary()
+
+#...or get a visual view of missing data here.
+school_data %>% 
+  filter(is.na(act_score)) %>% 
+  plot_histogram()
+```
+This is very interesting. I noticed a few things here. 1) All the schools missing ACT data are also missing admissions yield data. 2) There doesn't seem to be a unifying feature that links each school with missing ACT score except enrollment size - basically every school with missing ACT data has less than 2,000 students. Let's confirm:
+
+```{r}
+school_data %>% 
+  filter(is.na(act_score)) %>% 
+  select(ug_enroll) %>% 
+  summary()
+```
+
+There are enough missing values for ACT score that substituting with a single missing value would alter the shape of the underlying distribution. Since the missing schools are so small, they likely won't have an impact on our analysis. So let's remove them. Also, k-means can only handle numeric data so we will remove any categorical features.
+
+```{r}
+school_full <- school_data
+
+school_data <- school_data %>% 
+  filter(!is.na(act_score)) %>% 
+  drop_na()
+
+modeled_data <- school_data %>% 
+  column_to_rownames(var = 'UNITID') %>% 
+  mutate(pct_admitted = ifelse(is.na(pct_admitted), imputed_admissions, pct_admitted)) %>% 
+  select(-ft_enroll, -pt_enroll, -pct_online, -pct_foreign, -retention_rate, -in_state_tuition, -out_state_tuition, -school,
+         -CITY, -STABBR, -ZIP, -CBSA, -LATITUDE, -LONGITUD, -ADDR, -CONTROL) #These variables can explain the results of the analysis but themselves don't define 'selectivity' in our analysis
+
+plot_histogram(modeled_data)
+glimpse(modeled_data)
+summary(modeled_data)
+```
+
+Now that we cleaned up the data, we can look at what fields will go into our k-means analysis.
+```{r}
+colnames(modeled_data)
+```
+
+### K-Means Analysis
+
+We have a nice, tidy dataset. Note that removing the schools with missing NA values for ACT score got rid of every single other NA value, so that makes me feel better about removing them -- those schools had lots of missing values so keeping them would not add value to the analysis.
+
+Now we can start analyzing our data! K-means requires that all data is on the same magnitude, so that fields with large values or wide arrays of values don't have an unfair influence on the dataset. We can do that easily with the scale() function.
+
+```{r cleaning}
+modeled_data <- modeled_data %>% 
+  scale()
+
+summary(modeled_data)
+```
+#### Choosing the right value for 'k'
+While the 'optimal' number of clusters is ultimately a judgment call, there are a few ways to determine how many clusters we should settle with. There are three quantitative measures that help us here:
+1) the 'elbow' method, which calculates the sum of distances between each item within a cluster for various values of k -- and the 'elbow point' is the optimal number of clusters, since this is the point at which increasing k no longer yields a significant improvement in the total sum of squares;
+2) The Silhouette Method - which calculates how closely an item is matched with other items in the same cluster and how loosely it is with other clusters, where a high average value is optimal; and
+3) The Gap Statistic, which compares the difference between clusters in an observed dataset and clusters in randomly-generated datasets. 
+These three methods are ultimately suggestions, and it's up to the analyst to choose the optimal k.
+
+```{r, message=FALSE}
+library(factoextra)
+###Choose the right k
+#Elbow method
+fviz_nbclust(modeled_data, kmeans, method = "wss") #This suggests that 2 or 4 is the optimal k
+#Average silhouette method
+fviz_nbclust(modeled_data, kmeans, method = "silhouette") #This suggests optimal k is 2
+fviz_nbclust(modeled_data, kmeans, method = "gap_stat") #This suggests 10 is the optimal k
+
+```
+
+It seems like two of the three methods seem to point to 2 or 4 clusters, while the third method (the most complicated of the three, I might add) points to 10. While there is no 'one' answer to this question, ideally limiting the clusters somewhat would be ideal, since it is more intuitive. However, we can easily run three analyses and compare them!
+
+#### Performing clustering
+```{r}
+set.seed(1234)
+k_2 <- kmeans(modeled_data, centers = 2, nstart = 50)
+k_4 <- kmeans(modeled_data, centers = 4, nstart = 50)
+k_10 <- kmeans(modeled_data, centers = 10, nstart = 50)
+
+k_2$size
+k_4$size
+k_10$size
+
+#Assign each school to a cluster
+school_data <- school_data %>% 
+  mutate(cluster_2 = k_2$cluster) %>% 
+  mutate(cluster_4 = k_4$cluster) %>% 
+  mutate(cluster_10 = k_10$cluster)
+```
+
+
+
+#### Analyzing results
+We can start by simply summarizing each of the resulting groups across our three frameworks.
+```{r}
+school_data %>% 
+  select(cluster_2, CONTROL, act_score, pct_admitted, ug_enroll, pct_online, pct_instate, avg_tuition) %>% 
+  group_by(cluster_2) %>% 
+  summarize_all('mean')
+
+school_data %>% 
+  select(cluster_4, CONTROL, act_score, pct_admitted, ug_enroll, pct_online, pct_instate, avg_tuition) %>% 
+  group_by(cluster_4) %>% 
+  summarize_all('mean')
+
+school_data %>% 
+  select(cluster_10, CONTROL, act_score, pct_admitted, ug_enroll, pct_online, pct_instate, avg_tuition) %>% 
+  group_by(cluster_10) %>% 
+  summarize_all('mean')
+```
+
+We can also visualize the results. Note that this chart reduces the data into a two-dimensional graph via Principal Component Analysis, which makes the chart much less interpretable... but nonetheless gives a good sense of the rough shapes and overlaps present within our clusters.
+```{r warning=FALSE, message=FALSE}
+fviz_cluster(k_2,
+             data = modeled_data,
+             repel = TRUE,
+             geom = "point",
+             ggtheme = theme_minimal(),
+             title = "Clustering Results - 2 Clusters")
+
+fviz_cluster(k_4,
+             data = modeled_data,
+             repel = TRUE,
+             geom = "point",
+             ggtheme = theme_minimal(),
+             title = "Clustering Results - 4 Clusters")
+
+fviz_cluster(k_10,
+             data = modeled_data,
+             repel = TRUE,
+             geom = "point",
+             ggtheme = theme_minimal(),
+             title = "Clustering Results - 10 Clusters")
+```
+
+To me, the ten-group split is too many. While some of the groups stand out -- from the table we can see that group 7 is clearly the most academically rigorous of the clusters with low average acceptance rates and very high tuition, and group 2 contains large schools -- many of the other groups seem fairly similar along several dimensions. Depending on what you're trying to get out of the analysis, having 10 groups might make sense: if you want a taxonomy of all schools, being more granular might be useful. However, here I am just trying to see if analytics can give us an effective first cut at describing universities. Two groups doesn't seem descriptive enough, so sticking with 4 groups feels right.
+
+Let's see the summary table on the four-group split again.
+```{r, message=FALSE, warning=FALSE}
+library(kableExtra)
+school_data %>% 
+  select(cluster_4, CONTROL, act_score, pct_admitted, ug_enroll, pct_online, pct_instate, avg_tuition) %>% 
+  group_by(cluster_4) %>% 
+  summarize_all('mean') %>%
+  kable(digits=2, format = 'markdown',row.names = TRUE) %>% 
+  kable_styling(full_width = T,
+                font_size = 12) %>% 
+  row_spec(row = 0, color = '#660033')
+```
+
+### Evaluating the Clusters
+
+- Group 1 is the 'large publics' bucket - every school in this group is a public school. The average tuition in this group is quite low, with an average of <$13,000. Based on admissions standards, this group is moderately selective.
+- Group 2 is the less selective category. They have the lowest entrance test requirements and the highest share of students that come from within their state. Although not every school in this group is public (ie control is not always 1, which denotes a public school), schools in this group also charge a low average tuition.
+- Group 3 is the 'small privates'. Although this group has, in general, similar academic requirements as the first two groups, they charge over twice as much. These schools are small, on average, and they do a better job at attracting students from out-of-state.
+- Group 4 are the 'elites'. This group stands out from the rest on its ability to charge a lot in average tuition -- over \$50,000 on average! -- and accepts the lowest percentage of students.
+
+It's interesting that even though control is not a metric included in the visualization, the four groups have a relatively clean split between public and private ones.
+
+Now that we have a sense of what makes up our data, we can give our clusters some more informative names.
+
+```{r, warning=FALSE}
+
+summary_table <- school_data %>% 
+    select(cluster_4, CONTROL, act_score, pct_admitted, ug_enroll, pct_online, pct_instate, avg_tuition, retention_rate) %>% 
+  group_by(cluster_4) %>% 
+  summarize_all('mean')
+
+summary_table <- summary_table %>% 
+  mutate(cluster_4 = ifelse(cluster_4=='1', 'Large Publics',
+                            ifelse(cluster_4=='2', 'Less Selective',
+                                   ifelse(cluster_4=='3', 'Small Privates', 'Elites')))) %>% 
+  rename(cluster = cluster_4,
+         control = CONTROL)
+
+kable(summary_table, 'html', digits = c(0,2,2,2,0,1,1,0,2), align = 'lcccccccc') %>% 
+  kable_styling(full_width = F)
+```
+
+Let's drive this home with some visuals.
+```{r}
+school_data <- school_data %>% 
+  select(-cluster_10) %>% 
+  select(-cluster_2) %>% 
+  rename(cluster= cluster_4) %>% 
+  mutate(cluster = ifelse(cluster=='1', 'Large Publics',
+                            ifelse(cluster=='2', 'Less Selective',
+                                   ifelse(cluster=='3', 'Small Privates', 'Elites')))) %>% 
+  mutate(cluster = as.factor(cluster))
+```
+
+```{r}
+library(RColorBrewer) #for pretty colors
+#Average selectivity metrics by cluster
+school_data %>% 
+  select(cluster, act_score, pct_admitted, avg_tuition, ug_enroll) %>% 
+  group_by(cluster) %>% 
+  summarize_all('mean') %>% 
+  pivot_longer(cols = -cluster) %>% 
+  ggplot() +
+  geom_col(aes(x = cluster, y = value, fill = cluster)) +
+  facet_wrap(~name, scales = 'free') + 
+  scale_fill_brewer(palette = 'Dark2') +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1))
+
+#Scatterplot - tuition and act scores
+school_data %>% 
+  rename(undergrad_enrollment = ug_enroll) %>% 
+  ggplot() +
+  geom_point(aes(x = act_score, y = avg_tuition, color = cluster, size = undergrad_enrollment), alpha = 0.5) +
+  scale_color_brewer(palette = 'Dark2') +
+  theme_minimal() +
+  labs(x = 'ACT Score (Composite, 75th Percentile)',
+       y = 'Average Tuition Rate',
+       title = 'University Selectivity - ACT Scores and Avg. Tuition by Cluster')
+
+
+```
+
+
+### Wrap-Up
+So there you have it. Even though individual schools can have similar values for various selectivity measures, k-means helps us tell whether a school really is similar to another, not just based on one or two metrics, but the sum total of all the metrics that we deem important.
+
+While this clustering exercise is inherently subjective and decidedly *not* a predictive model, it's still useful. At the end of the day, this analysis helps *me* understand the data... and isn't deeper understanding what analytics is all about?
+
+A good extension of this analysis could be to use the results of these groupings in a predictive model, allowing you to build different models for each cluster of schools. This is potentially useful since each resulting model's coefficients need only to describe a certain subset of the data as opposed to all the data, which could ultimately result in a more accurate model. 
+
+```{r include=FALSE}
+library(tidytext) #for the reorder_within function only
+oh <- school_data %>% 
+  filter(STABBR=='OH')
+samples <- c('Youngstown State University', 'Case Western Reserve University', 'Ohio State University-Main Campus', 'Marietta College')
+
+oh %>% 
+  select(school, act_score, pct_admitted, avg_tuition, ug_enroll, cluster) %>% 
+  rename(Cluster=cluster, `Percent Admitted`=pct_admitted, `Average Tuition`=avg_tuition, `Undergrad Enrollment` = ug_enroll) %>% 
+  filter(!is.na(school)) %>% 
+  pivot_longer(cols = c(-school, -Cluster)) %>% 
+  arrange(Cluster, desc(value)) %>% 
+  mutate(school = reorder_within(school, value, name)) %>% 
+  ggplot() +
+  geom_col(aes(x = reorder(school, -value), y = value, fill = Cluster), color='black', size=0.01) +
+  facet_wrap(~name, scales = 'free') + 
+  scale_fill_brewer(palette = 'Set1') +
+  labs(x='Metric', y='Value', title='Selectivity Metrics for Ohio Schools Based on Cluster') +
+  theme_minimal() +
+  theme(axis.text.x = element_blank())
+
+test <- oh %>% 
+  filter(school %in% c('The College of Wooster', 'Xavier University'))
+```
+
+And what about those schools I brought up in the beginning, College of Wooster and Xavier? Turns out they do belong to different groups in our analysis, with Xavier in the 'Small Privates' group and Wooster in the 'Elites' group.
+```{r}
+library(ggrepel)
+school_data %>% 
+  rename(undergrad_enrollment = ug_enroll) %>% 
+  ggplot(aes(x = act_score, y = avg_tuition)) +
+  geom_point(aes(color = cluster, size = undergrad_enrollment), alpha = 0.5) +
+  geom_text_repel(aes(label=ifelse(school == 'The College of Wooster' | school == 'Xavier University', school, '')), nudge_x = 2, nudge_y = -4500, max.overlaps = 2000) +
+  scale_color_brewer(palette = 'Dark2') +
+  theme_minimal() +
+  labs(x = 'ACT Score (Composite, 75th Percentile)',
+       y = 'Average Tuition Rate',
+       title = 'University Selectivity - ACT Scores and Avg. Tuition by Cluster')
+```
