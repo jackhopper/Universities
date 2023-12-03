@@ -30,12 +30,21 @@ For this analysis, we need the tidyverse as well as the RODBC package, which all
 ```{r, echo = FALSE, message = FALSE, warning=FALSE}
 library(tidyverse)
 library(lubridate)
-library(RODBC)
+library(readxl)
+```
+
+```{r, include=FALSE}
+setwd("C:\\Users\\jackh\\OneDrive\\Documents\\R Analytics\\Universities")
 ```
 
 ```{r}
-# Connect to Access db
-channel19 <- odbcConnectAccess2007("C:\\Users\\jackh\\OneDrive\\Documents\\R Analytics\\Universities\\IPEDS202122.accdb")
+# Read data
+institution <- read_excel("data\\HD2021.xlsx")
+adm <- read_excel("data\\ADM2021.xlsx")
+adm_yield <- read_excel("data\\DRVADM2021.xlsx")
+enrollment <- read_excel("data\\DRVEF2021.xlsx")
+enrollment_d <- read_excel("data\\EF2021D.xlsx")
+tuition <- read_excel("data\\IC2021_AY.xlsx")
 ```
 
 ##### Build the data frame
@@ -44,25 +53,22 @@ We will require data on multiple categories. Note that IPEDS stores each variabl
 
 ```{r}
 #Institutional characteristics
-institution <- sqlFetch(channel19, "HD2019")
+
 institution <- institution %>% 
   select(UNITID, INSTNM, ICLEVEL, CONTROL,  LATITUDE, LONGITUD, ADDR, CITY, STABBR, ZIP, CBSA) %>% 
   rename(school = INSTNM)
 
 #Admissions
-adm <- sqlFetch(channel19, "ADM2019")
 adm <- adm %>% 
   select(UNITID, ACTCM75) %>% 
   rename(act_score = ACTCM75
          )
 #DRAdmissions table
-adm_yield <- sqlFetch(channel19, "DRVADM2019")
 adm_yield <- adm_yield %>% 
   select(UNITID, DVADM01) %>% 
   rename(pct_admitted = DVADM01)
 
 #Enrollment characteristics
-enrollment <- sqlFetch(channel19, "DRVEF2019")
 enrollment <- enrollment %>% 
   select(UNITID, EFUG, EFUGFT, EFUGPT, PCUDEEXC, RMINSTTP, RMOUSTTP, RMFRGNCP) %>% 
   rename(ug_enroll = EFUG,
@@ -72,14 +78,12 @@ enrollment <- enrollment %>%
          pct_instate = RMINSTTP,
          pct_outstate = RMOUSTTP,
          pct_foreign = RMFRGNCP)
-enrollment_d <- sqlFetch(channel19, "EF2019D")
 enrollment_d <- enrollment_d %>%
   select(UNITID, RET_PCF) %>% 
   rename(retention_rate = RET_PCF)
 enrollment <- left_join(enrollment, enrollment_d, by = c("UNITID" = "UNITID"))
 
 #Tuition
-tuition <- sqlFetch(channel19, "IC2019_AY")
 tuition <- tuition %>% 
   select(UNITID, TUITION2, TUITION3) %>% 
   rename(in_state_tuition = TUITION2,
@@ -113,7 +117,7 @@ We now have a primary data frame. Let's take a look at it.
 school_data <- school_data %>% 
   mutate(UNITID = as.character(UNITID))
 
-glimpse(school_data)
+#glimpse(school_data)
 summary(school_data)
 ```
 
@@ -132,7 +136,7 @@ summary(school_data$avg_tuition)
 
 
 One thing I noticed about the data in the first exploration is that the ACT score and percent admitted fields seem to have the most NAs. I wonder if these NAs are correlated. I'll make use of the plot_histogram() feature from the DataExplorer package to give a better sense of the NA data here.
-```{r}
+```{r, echo=FALSE}
 library(DataExplorer)
 
 #Could view a table of missing data here...
@@ -145,16 +149,14 @@ school_data %>%
   filter(is.na(act_score)) %>% 
   plot_histogram()
 ```
-This is very interesting. I noticed a few things here. 1) All the schools missing ACT data are also missing admissions yield data. 2) There doesn't seem to be a unifying feature that links each school with missing ACT score except enrollment size - basically every school with missing ACT data has less than 2,000 students. Let's confirm:
+There doesn't seem to be a unifying feature that links each school with missing ACT scores. Most schools are smaller, but there are some larger schools being left out. Accordingly, we can impute this missing data with the average value in our data, so we aren't losing all these observations.
 
 ```{r}
-school_data %>% 
-  filter(is.na(act_score)) %>% 
-  select(ug_enroll) %>% 
-  summary()
+school_data <- school_data %>% 
+  mutate(act_score = ifelse(is.na(act_score), mean(act_score, na.rm = TRUE), act_score))
 ```
 
-There are enough missing values for ACT score that substituting with a single missing value would alter the shape of the underlying distribution. Since the missing schools are so small, they likely won't have an impact on our analysis. So let's remove them. Also, k-means can only handle numeric data so we will remove any categorical features.
+Finally, k-means can only handle numeric data so we will remove any categorical features.
 
 ```{r}
 school_full <- school_data
@@ -170,7 +172,6 @@ modeled_data <- school_data %>%
          -CITY, -STABBR, -ZIP, -CBSA, -LATITUDE, -LONGITUD, -ADDR, -CONTROL) #These variables can explain the results of the analysis but themselves don't define 'selectivity' in our analysis
 
 plot_histogram(modeled_data)
-glimpse(modeled_data)
 summary(modeled_data)
 ```
 
@@ -209,24 +210,21 @@ fviz_nbclust(modeled_data, kmeans, method = "gap_stat") #This suggests 10 is the
 
 ```
 
-It seems like two of the three methods seem to point to 2 or 4 clusters, while the third method (the most complicated of the three, I might add) points to 10. While there is no 'one' answer to this question, ideally limiting the clusters somewhat would be ideal, since it is more intuitive. However, we can easily run three analyses and compare them!
+It seems like two of the three methods seem to point to 2 clusters.  While there is no 'one' answer to this question, ideally limiting the clusters somewhat would be ideal, since it is more intuitive.
 
 #### Performing clustering
 ```{r}
 set.seed(1234)
 k_2 <- kmeans(modeled_data, centers = 2, nstart = 50)
 k_4 <- kmeans(modeled_data, centers = 4, nstart = 50)
-k_10 <- kmeans(modeled_data, centers = 10, nstart = 50)
 
 k_2$size
 k_4$size
-k_10$size
 
 #Assign each school to a cluster
 school_data <- school_data %>% 
   mutate(cluster_2 = k_2$cluster) %>% 
-  mutate(cluster_4 = k_4$cluster) %>% 
-  mutate(cluster_10 = k_10$cluster)
+  mutate(cluster_4 = k_4$cluster)
 ```
 
 
@@ -242,11 +240,6 @@ school_data %>%
 school_data %>% 
   select(cluster_4, CONTROL, act_score, pct_admitted, ug_enroll, pct_online, pct_instate, avg_tuition) %>% 
   group_by(cluster_4) %>% 
-  summarize_all('mean')
-
-school_data %>% 
-  select(cluster_10, CONTROL, act_score, pct_admitted, ug_enroll, pct_online, pct_instate, avg_tuition) %>% 
-  group_by(cluster_10) %>% 
   summarize_all('mean')
 ```
 
@@ -265,16 +258,9 @@ fviz_cluster(k_4,
              geom = "point",
              ggtheme = theme_minimal(),
              title = "Clustering Results - 4 Clusters")
-
-fviz_cluster(k_10,
-             data = modeled_data,
-             repel = TRUE,
-             geom = "point",
-             ggtheme = theme_minimal(),
-             title = "Clustering Results - 10 Clusters")
 ```
 
-To me, the ten-group split is too many. While some of the groups stand out -- from the table we can see that group 7 is clearly the most academically rigorous of the clusters with low average acceptance rates and very high tuition, and group 2 contains large schools -- many of the other groups seem fairly similar along several dimensions. Depending on what you're trying to get out of the analysis, having 10 groups might make sense: if you want a taxonomy of all schools, being more granular might be useful. However, here I am just trying to see if analytics can give us an effective first cut at describing universities. Two groups doesn't seem descriptive enough, so sticking with 4 groups feels right.
+To me, two groups doesn't seem descriptive enough, so sticking with 4 groups feels right.
 
 Let's see the summary table on the four-group split again.
 ```{r, message=FALSE, warning=FALSE}
