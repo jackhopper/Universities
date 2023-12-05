@@ -11,7 +11,7 @@ knitr::opts_chunk$set(echo = TRUE)
 
 ## Introduction - Why Do This Analysis?
 
-Unsupervised Machine Learning helps us make sense of patterns in data. In particular, clustering analysis helps us find interesting ways to group items based on how similar they are. One useful application of clustering is in higher education. There are so many universities in the U.S., and so many ways to measure how 'good' a school is, that it's easy to get lost in the weeds of the data. For example, consider two schools in my home state of Ohio. Should we think of the College of Wooster as a comparable school to Xavier University? Both are private colleges that enroll less than 6,000 students, accept over half of their applicants, and charge relatively high (>$40,000) tuition. When we're classifying universities, should they be in the same group?
+Unsupervised Machine Learning helps us make sense of patterns in data. In particular, clustering analysis helps us find interesting ways to group items based on how similar they are. One useful application of clustering is in higher education. There are so many universities in the U.S., and so many ways to measure how 'good' a school is, that it's easy to get lost in the weeds of the data. For example, consider two schools in my home state of Ohio. Should we think of the College of Wooster as a comparable school to the University of Dayton? Both are private colleges that enroll less than 10,000 students, have a healthy share of out-of-state students, and charge relatively high (>$40,000) tuition. When we're classifying universities, should they be in the same group?
 
 For this analysis, I'll attempt to classify schools based on their selectivity. 'Selectivity' is an admittedly vague metric, but there are a handful of meaningful statistics that represent selectivity based on university prestige and academic rigor. These are metrics such as tuition rates, admission rates, ACT scores for incoming students, and total enrollment. With clustering, there is no single 'correct' answer, and as an unsupervised Machine Learning technique we aren't trying to come up with a single group of 'best' schools; rather, this is a way to present a useful framework for revealing patterns in school selectivity data, allowing us to compare schools on the same playing field.
 
@@ -277,10 +277,10 @@ school_data %>%
 
 ### Evaluating the Clusters
 
-- Group 1 is the 'large publics' bucket - every school in this group is a public school. The average tuition in this group is quite low, with an average of <$13,000. Based on admissions standards, this group is moderately selective.
+- Group 1 are the 'elites'. This group stands out from the rest on its ability to charge a lot in average tuition -- over \$50,000 on average! -- and accepts the lowest percentage of students.
 - Group 2 is the less selective category. They have the lowest entrance test requirements and the highest share of students that come from within their state. Although not every school in this group is public (ie control is not always 1, which denotes a public school), schools in this group also charge a low average tuition.
 - Group 3 is the 'small privates'. Although this group has, in general, similar academic requirements as the first two groups, they charge over twice as much. These schools are small, on average, and they do a better job at attracting students from out-of-state.
-- Group 4 are the 'elites'. This group stands out from the rest on its ability to charge a lot in average tuition -- over \$50,000 on average! -- and accepts the lowest percentage of students.
+- Group 4 is the 'large publics' bucket - every school in this group is a public school. The average tuition in this group is quite low, with an average of <$13,000. Based on admissions standards, this group is moderately selective.
 
 It's interesting that even though control is not a metric included in the visualization, the four groups have a relatively clean split between public and private ones.
 
@@ -307,12 +307,11 @@ kable(summary_table, 'html', digits = c(0,2,2,2,0,1,1,0,2), align = 'lcccccccc')
 Let's drive this home with some visuals.
 ```{r}
 school_data <- school_data %>% 
-  select(-cluster_10) %>% 
   select(-cluster_2) %>% 
   rename(cluster= cluster_4) %>% 
-  mutate(cluster = ifelse(cluster=='1', 'Large Publics',
+  mutate(cluster = ifelse(cluster=='1', 'Elites',
                             ifelse(cluster=='2', 'Less Selective',
-                                   ifelse(cluster=='3', 'Small Privates', 'Elites')))) %>% 
+                                   ifelse(cluster=='3', 'Small Privates', 'Large Publics')))) %>% 
   mutate(cluster = as.factor(cluster))
 ```
 
@@ -378,14 +377,14 @@ test <- oh %>%
   filter(school %in% c('The College of Wooster', 'Xavier University'))
 ```
 
-And what about those schools I brought up in the beginning, College of Wooster and Xavier? Turns out they do belong to different groups in our analysis, with Xavier in the 'Small Privates' group and Wooster in the 'Elites' group.
+And what about those schools I brought up in the beginning, College of Wooster and Dayton? Turns out they do belong to different groups in our analysis, with Dayton in the 'Small Privates' group and Wooster in the 'Elites' group.
 ```{r}
 library(ggrepel)
 school_data %>% 
   rename(undergrad_enrollment = ug_enroll) %>% 
   ggplot(aes(x = act_score, y = avg_tuition)) +
   geom_point(aes(color = cluster, size = undergrad_enrollment), alpha = 0.5) +
-  geom_text_repel(aes(label=ifelse(school == 'The College of Wooster' | school == 'Xavier University', school, '')), nudge_x = 2, nudge_y = -4500, max.overlaps = 2000) +
+  geom_text_repel(aes(label=ifelse(school == 'The College of Wooster' | school == 'University of Dayton', school, '')), nudge_x = 2, nudge_y = -4500, max.overlaps = 2000) +
   scale_color_brewer(palette = 'Dark2') +
   theme_minimal() +
   labs(x = 'ACT Score (Composite, 75th Percentile)',
