@@ -19,13 +19,11 @@ For this analysis, I'll attempt to classify schools based on their selectivity. 
 
 For this analysis, we will make use of the IPEDS (Integrated Postsecondary Education Data System) database, a government source for higher education data. The latest data covers the 2019-2020 school year.
 
-IPEDS publishes a Microsoft Access database every year with hundreds of variables covering thousands of higher education institutions, so we will connect to that to grab the data. The advantage of this setup is that we quickly can access data from every IPEDS table at once instead of grabbing each file individually.
-
-This Access database contains dozens of tables, so a good first step is to explore the data from IPEDS' site directly, downloading the accompanying README files, and examining the type of data available in each table. Let's get to it!
+IPEDS publishes a Microsoft Access database every year with hundreds of variables covering thousands of higher education institutions. To simplify things, I exported the relevant tables from Access to Excel, to streamline the analysis & move away from the bulky Access database. Let's get to it!
 
 #### Load packages and connect to the Access database
 
-For this analysis, we need the tidyverse as well as the RODBC package, which allows connections to Access databases.
+For this analysis, we need the tidyverse as well as the readxl package to load the Excel data.
 
 ```{r, echo = FALSE, message = FALSE, warning=FALSE}
 library(tidyverse)
