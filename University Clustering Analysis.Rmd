@@ -11,15 +11,15 @@ knitr::opts_chunk$set(echo = TRUE)
 
 ## Introduction - Why Do This Analysis?
 
-Unsupervised Machine Learning helps us make sense of patterns in data. In particular, clustering analysis helps us find interesting ways to group items based on how similar they are. One useful application of clustering is in higher education. There are so many universities in the U.S., and so many ways to measure how 'good' a school is, that it's easy to get lost in the weeds of the data. For example, consider two schools in my home state of Ohio. Should we think of the College of Wooster as a comparable school to the University of Dayton? Both are private colleges that enroll less than 10,000 students, have a healthy share of out-of-state students, and charge relatively high (>$40,000) tuition. When we're classifying universities, should they be in the same group?
+One of the most interesting Unsupervised Machine Learning techniques is clustering. Clustering helps us find interesting ways to group items based on how similar they are. One useful application of clustering is in higher education. For example, consider two schools in my home state of Ohio. Should we think of the College of Wooster as a comparable school to the University of Dayton? Both are private colleges that enroll less than 10,000 students, have a healthy share of out-of-state students, and charge relatively high (>$40,000) tuition. When we're classifying universities, should they be in the same group?
 
-For this analysis, I'll attempt to classify schools based on their selectivity. 'Selectivity' is an admittedly vague metric, but there are a handful of meaningful statistics that represent selectivity based on university prestige and academic rigor. These are metrics such as tuition rates, admission rates, ACT scores for incoming students, and total enrollment. With clustering, there is no single 'correct' answer, and as an unsupervised Machine Learning technique we aren't trying to come up with a single group of 'best' schools; rather, this is a way to present a useful framework for revealing patterns in school selectivity data, allowing us to compare schools on the same playing field.
+For this analysis, I'll attempt to classify schools based on their selectivity. 'Selectivity' is a vague metric, but there are a handful of meaningful statistics that represent selectivity based on university prestige and academic rigor. These are metrics such as tuition rates, admission rates, ACT scores for incoming students, and total enrollment.
 
 ### Data Gathering & Exploration
 
 For this analysis, we will make use of the IPEDS (Integrated Postsecondary Education Data System) database, a government source for higher education data. The latest data covers the 2019-2020 school year.
 
-IPEDS publishes a Microsoft Access database every year with hundreds of variables covering thousands of higher education institutions. To simplify things, I exported the relevant tables from Access to Excel, to streamline the analysis & move away from the bulky Access database. Let's get to it!
+IPEDS publishes a Microsoft Access database every year with hundreds of variables covering thousands of higher education institutions. To simplify things, I exported the relevant tables from Access to Excel, to streamline the analysis & move away from the bulky Access database.
 
 #### Load packages and connect to the Access database
 
@@ -47,7 +47,7 @@ tuition <- read_excel("data\\IC2021_AY.xlsx")
 
 ##### Build the data frame
 
-We will require data on multiple categories. Note that IPEDS stores each variable with a mnemonic - so note that I have taken steps to translate each mnemonic into a pithy but more informative variable name. For instance, in the first table I renamed the IPEDS 'ACTCM75' variable as 'act_score.' The following code condenses all the data pulls into a series of tables for clarity.
+We will require data on multiple categories. Note that IPEDS stores each variable with a mnemonic - so note that I have taken steps to translate each mnemonic into a more informative variable name.
 
 ```{r}
 #Institutional characteristics
@@ -88,7 +88,7 @@ tuition <- tuition %>%
          out_state_tuition = TUITION3)
 ```
 
-Now we can join all this data together into a master data frame and filter the resulting data to only include 4-year, non-profit schools (ie, exclude 2 year/technical colleges and for-profit institutions, as those are outside the scope of this analysis).
+Now we can join all this data together into a main data frame and filter the resulting data to only include 4-year, non-profit schools (ie, exclude 2 year/technical colleges and for-profit institutions, as those are outside the scope of this analysis).
 ```{r}
 ###Join it all together###
 school_data <- institution %>% 
@@ -115,11 +115,10 @@ We now have a primary data frame. Let's take a look at it.
 school_data <- school_data %>% 
   mutate(UNITID = as.character(UNITID))
 
-#glimpse(school_data)
 summary(school_data)
 ```
 
-Though we have data for in and out of state tuition separately, we need to calculate an 'average' tuition rate for all students. Note that the percent of students paying in/out of state don't add to 100 (in the data, schools can enter some students' in-state status as 'unknown') so we will have to re-scale that data to calculate the average.
+Now we can engage in some light feature engineering. One of these features will be to calculate an 'average' tuition rate for all students.
 
 ```{r}
 school_data <- school_data %>% 
@@ -132,8 +131,8 @@ school_data <- school_data %>%
 summary(school_data$avg_tuition)
 ```
 
+One thing I noticed about the data in the first exploration is that the ACT score and percent admitted fields seem to have the most NAs. We can use of the plot_histogram() feature from the DataExplorer package to give a better sense of the NA data here.
 
-One thing I noticed about the data in the first exploration is that the ACT score and percent admitted fields seem to have the most NAs. I wonder if these NAs are correlated. I'll make use of the plot_histogram() feature from the DataExplorer package to give a better sense of the NA data here.
 ```{r, echo=FALSE}
 library(DataExplorer)
 
@@ -180,7 +179,7 @@ colnames(modeled_data)
 
 ### K-Means Analysis
 
-We have a nice, tidy dataset. Note that removing the schools with missing NA values for ACT score got rid of every single other NA value, so that makes me feel better about removing them -- those schools had lots of missing values so keeping them would not add value to the analysis.
+We have a nice, tidy dataset.
 
 Now we can start analyzing our data! K-means requires that all data is on the same magnitude, so that fields with large values or wide arrays of values don't have an unfair influence on the dataset. We can do that easily with the scale() function.
 
@@ -208,7 +207,7 @@ fviz_nbclust(modeled_data, kmeans, method = "gap_stat") #This suggests 10 is the
 
 ```
 
-It seems like two of the three methods seem to point to 2 clusters.  While there is no 'one' answer to this question, ideally limiting the clusters somewhat would be ideal, since it is more intuitive.
+It seems like two of the three methods seem to point to 2 clusters.  While there is no 'one' answer to this question, intuitively it makes sense to have somewhere between 3-6 groups for easy interpretation.
 
 #### Performing clustering
 ```{r}
@@ -228,7 +227,7 @@ school_data <- school_data %>%
 
 
 #### Analyzing results
-We can start by simply summarizing each of the resulting groups across our three frameworks.
+We can start by simply summarizing each of the resulting groups across our frameworks.
 ```{r}
 school_data %>% 
   select(cluster_2, CONTROL, act_score, pct_admitted, ug_enroll, pct_online, pct_instate, avg_tuition) %>% 
@@ -276,9 +275,9 @@ school_data %>%
 ### Evaluating the Clusters
 
 - Group 1 are the 'elites'. This group stands out from the rest on its ability to charge a lot in average tuition -- over \$50,000 on average! -- and accepts the lowest percentage of students.
-- Group 2 is the less selective category. They have the lowest entrance test requirements and the highest share of students that come from within their state. Although not every school in this group is public (ie control is not always 1, which denotes a public school), schools in this group also charge a low average tuition.
-- Group 3 is the 'small privates'. Although this group has, in general, similar academic requirements as the first two groups, they charge over twice as much. These schools are small, on average, and they do a better job at attracting students from out-of-state.
-- Group 4 is the 'large publics' bucket - every school in this group is a public school. The average tuition in this group is quite low, with an average of <$13,000. Based on admissions standards, this group is moderately selective.
+- Group 2 is the less selective category. They have the lowest entrance test requirements and the highest share of students that come from within their state. Although not every school in this group is public, schools in this group also charge a low average tuition.
+- Group 3 is the 'small privates'. Although this group has, in general, similar academic requirements to Group 2 & 4, they charge over twice as much. These schools are small, on average, and they do a better job at attracting students from out-of-state.
+- Group 4 is the 'large publics' bucket - nearly every school in this group is a public school. The average tuition in this group is quite low, with an average of <$13,000. Based on admissions standards, this group is moderately selective.
 
 It's interesting that even though control is not a metric included in the visualization, the four groups have a relatively clean split between public and private ones.
 
@@ -345,8 +344,6 @@ school_data %>%
 
 ### Wrap-Up
 So there you have it. Even though individual schools can have similar values for various selectivity measures, k-means helps us tell whether a school really is similar to another, not just based on one or two metrics, but the sum total of all the metrics that we deem important.
-
-While this clustering exercise is inherently subjective and decidedly *not* a predictive model, it's still useful. At the end of the day, this analysis helps *me* understand the data... and isn't deeper understanding what analytics is all about?
 
 A good extension of this analysis could be to use the results of these groupings in a predictive model, allowing you to build different models for each cluster of schools. This is potentially useful since each resulting model's coefficients need only to describe a certain subset of the data as opposed to all the data, which could ultimately result in a more accurate model. 
 
