@@ -29,6 +29,7 @@ For this analysis, we need the tidyverse as well as the readxl package to load t
 library(tidyverse)
 library(lubridate)
 library(readxl)
+library(plotly)
 ```
 
 ```{r, include=FALSE}
@@ -340,14 +341,16 @@ school_data %>%
 
 #ggplotly(my_plot)  # Convert to Plotly object
 
-plot_ly(data = school_data, 
+my_plot <- plot_ly(data = school_data, 
         x = ~act_score, y = ~avg_tuition, type = "scatter", mode = "markers",
         color = ~cluster,
         size = ~ug_enroll,
-        hoverinfo = "text", text = ~paste("School: ", school, "<br> Undergrad Enrollment: ", ug_enroll)) %>%  # Your existing plot code
-  layout(title = "Selectivity Metrics for Schools Based on Cluster",
+        hoverinfo = "text", text = ~paste("School: ", school, "<br> Undergrad Enrollment: ", ug_enroll)) %>%
+  plotly::layout(title = "Selectivity Metrics for Schools Based on Cluster",
          xaxis = list(title = "ACT Score (Composite, 75th Percentile)"),
          yaxis = list(title = "Average Tuition Rate"))
+
+ggplotly(my_plot)
 
 
 ```
