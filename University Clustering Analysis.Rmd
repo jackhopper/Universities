@@ -328,15 +328,26 @@ school_data %>%
   theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1))
 
 #Scatterplot - tuition and act scores
-school_data %>% 
-  rename(undergrad_enrollment = ug_enroll) %>% 
-  ggplot() +
-  geom_point(aes(x = act_score, y = avg_tuition, color = cluster, size = undergrad_enrollment), alpha = 0.5) +
-  scale_color_brewer(palette = 'Dark2') +
-  theme_minimal() +
-  labs(x = 'ACT Score (Composite, 75th Percentile)',
-       y = 'Average Tuition Rate',
-       title = 'University Selectivity - ACT Scores and Avg. Tuition by Cluster')
+# my_plot <- school_data %>% 
+#   rename(undergrad_enrollment = ug_enroll) %>% 
+#   ggplot() +
+#   geom_point(aes(x = act_score, y = avg_tuition, color = cluster, size = undergrad_enrollment), alpha = 0.5) +
+#   scale_color_brewer(palette = 'Dark2') +
+#   theme_minimal() +
+#   labs(x = 'ACT Score (Composite, 75th Percentile)',
+#        y = 'Average Tuition Rate',
+#        title = 'University Selectivity - ACT Scores and Avg. Tuition by Cluster')
+
+#ggplotly(my_plot)  # Convert to Plotly object
+
+plot_ly(data = school_data, 
+        x = ~act_score, y = ~avg_tuition, type = "scatter", mode = "markers",
+        color = ~cluster,
+        size = ~ug_enroll,
+        hoverinfo = "text", text = ~paste("School: ", school, "<br> Undergrad Enrollment: ", ug_enroll)) %>%  # Your existing plot code
+  layout(title = "Selectivity Metrics for Schools Based on Cluster",
+         xaxis = list(title = "ACT Score (Composite, 75th Percentile)"),
+         yaxis = list(title = "Average Tuition Rate"))
 
 
 ```
