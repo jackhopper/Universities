@@ -190,6 +190,12 @@ modeled_data <- modeled_data %>%
 
 summary(modeled_data)
 ```
+```{r include=FALSE}
+#Writing the output so we can load it in the app
+modeled_data_df <- as.data.frame(modeled_data)
+write_csv(modeled_data_df, 'C:\\Users\\jackh\\OneDrive\\Documents\\R Analytics\\Universities\\modeled_data_df.csv')
+
+```
 #### Choosing the right value for 'k'
 While the 'optimal' number of clusters is ultimately a judgment call, there are a few ways to determine how many clusters we should settle with. There are three quantitative measures that help us here:
 1) the 'elbow' method, which calculates the sum of distances between each item within a cluster for various values of k -- and the 'elbow point' is the optimal number of clusters, since this is the point at which increasing k no longer yields a significant improvement in the total sum of squares;
