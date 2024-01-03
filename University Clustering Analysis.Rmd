@@ -195,6 +195,8 @@ summary(modeled_data)
 modeled_data_df <- as.data.frame(modeled_data)
 write_csv(modeled_data_df, 'C:\\Users\\jackh\\OneDrive\\Documents\\R Analytics\\Universities\\modeled_data_df.csv')
 
+write_csv(school_data, 'C:\\Users\\jackh\\OneDrive\\Documents\\R Analytics\\Universities\\school_data_df.csv')
+
 ```
 #### Choosing the right value for 'k'
 While the 'optimal' number of clusters is ultimately a judgment call, there are a few ways to determine how many clusters we should settle with. There are three quantitative measures that help us here:
@@ -230,7 +232,6 @@ school_data <- school_data %>%
   mutate(cluster_2 = k_2$cluster) %>% 
   mutate(cluster_4 = k_4$cluster)
 ```
-
 
 
 #### Analyzing results
