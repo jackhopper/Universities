@@ -2,6 +2,7 @@
 library(shiny)
 library(tidyverse)
 library(factoextra)
+library(plotly)
 
 ###Read in data
 modeled_scaled <- read_csv('https://raw.githubusercontent.com/jackhopper/Universities/main/modeled_data_df.csv')
@@ -19,7 +20,14 @@ ui <- shinyUI(fluidPage(
     
     # Main panel to display clustering results
     mainPanel(
-      plotOutput("clusterPlot")
+      fluidPage(
+        fluidRow(
+          column(6, 
+                 plotlyOutput("pt1")),
+          column(6, 
+                 plotlyOutput("pt2"))
+        )
+      )
     )
   )
 ))
@@ -43,7 +51,7 @@ server <- shinyServer(function(input, output) {
   })
   
   # Generate the raw fviz cluster plot
-  output$clusterPlot <- renderPlot({
+  output$pt1 <- renderPlotly({
     fviz_cluster(clusters(),
                  data = data,
                  repel = TRUE,
@@ -52,7 +60,19 @@ server <- shinyServer(function(input, output) {
                  main = "Clustering Results")
     #plot(data[, 1:2], col = clusters()$cluster, pch = 20, cex = 3)
   })
-})
+  
+  output$pt2 <- renderPlotly({
+    ggplotly(plot_ly(data = data_with_clusters(), 
+                     x = ~act_score, y = ~avg_tuition, type = "scatter", mode = "markers",
+                     color = ~cluster,
+                     size = ~ug_enroll,
+                     hoverinfo = "text", text = ~paste("School: ", school, "<br> Undergrad Enrollment: ", ug_enroll)) %>%
+               plotly::layout(title = "Selectivity Metrics for Schools Based on Cluster",
+                              xaxis = list(title = "ACT Score (Composite, 75th Percentile)"),
+                              yaxis = list(title = "Average Tuition Rate")))
+  })
+  
+})  
 
 # Run the application 
 shinyApp(ui = ui, server = server)
