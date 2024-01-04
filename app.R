@@ -20,13 +20,9 @@ ui <- shinyUI(fluidPage(
     
     # Main panel to display clustering results
     mainPanel(
-      fluidPage(
-        fluidRow(
-          column(6, 
-                 plotlyOutput("pt1")),
-          column(6, 
-                 plotlyOutput("pt2"))
-        )
+      tabsetPanel(
+        tabPanel("PCA Analysis", plotlyOutput("firstPlot")),
+        tabPanel("Scatterplot with Clusters", plotlyOutput("secondPlot"))
       )
     )
   )
@@ -51,17 +47,16 @@ server <- shinyServer(function(input, output) {
   })
   
   # Generate the raw fviz cluster plot
-  output$pt1 <- renderPlotly({
+  output$firstPlot <- renderPlotly({
     fviz_cluster(clusters(),
                  data = data,
                  repel = TRUE,
                  geom = "point",
                  ggtheme = theme_minimal(),
                  main = "Clustering Results")
-    #plot(data[, 1:2], col = clusters()$cluster, pch = 20, cex = 3)
   })
   
-  output$pt2 <- renderPlotly({
+  output$secondPlot <- renderPlotly({
     ggplotly(plot_ly(data = data_with_clusters(), 
                      x = ~act_score, y = ~avg_tuition, type = "scatter", mode = "markers",
                      color = ~cluster,
