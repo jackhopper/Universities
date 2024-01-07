@@ -12,8 +12,8 @@ schools <- read_csv('https://raw.githubusercontent.com/jackhopper/Universities/m
 #Define UI for application
 ui <- shinyUI(fluidPage(
   h1("University Clustering Analysis"),
-  h3("Choose your own clusters on the left & view your results on the right"),
-  h4("K-Means clustering groups data across 6 variables to provide quantitative measures of similarity"),
+  h3("Choose how many clusters to use on the left & view your results on the right"),
+  h4("K-Means clustering identifies interesting patterns in data by grouping it together. You can create your own groups of universities below!"),
   # Define side panel with slider input
   sidebarLayout(
     sidebarPanel(
