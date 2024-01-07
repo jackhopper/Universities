@@ -11,8 +11,8 @@ schools <- read_csv('https://raw.githubusercontent.com/jackhopper/Universities/m
 
 #Define UI for application
 ui <- shinyUI(fluidPage(
-  h1("University K-Means Clustering"),
-  h2("Choose your own clusters & view your results"),
+  h1("University Clustering Analysis"),
+  h3("Choose your own clusters on the left & view your results on the right"),
   h4("K-Means clustering groups data across 6 variables to provide quantitative measures of similarity"),
   # Define side panel with slider input
   sidebarLayout(
@@ -25,10 +25,11 @@ ui <- shinyUI(fluidPage(
     mainPanel(
       tabsetPanel(
         tabPanel("PCA Analysis", plotlyOutput("firstPlot"),
-                 p("This graph shows the clustering results across all 6 dimensions reduced down to two key 'principal components'.")),
+                 p("View the size & similarity of the clusters selected. In this graph, all dimensions are reduced down to two key 'principal components'.")),
         tabPanel("Scatterplot with Clusters", plotlyOutput("secondPlot"),
                  p("This graph shows the clusters overlaid on two key dimensions of the analysis: ACT score and average tuition."))
-      )
+      ),
+      a("Check out the data used in this analysis here", href = "https://raw.githubusercontent.com/jackhopper/Universities/main/school_data_df.csv")
     )
   )
 ))
